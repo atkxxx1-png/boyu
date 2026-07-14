@@ -1883,7 +1883,7 @@
           </div>
           <span style="font-size:12px;color:var(--text-secondary);" id="skuboardCount"></span>
           <button class="btn btn-success btn-sm" onclick="exportSkuBoard()" title="按当前筛选条件导出Excel">📥 导出Excel</button>
-          <button class="btn btn-outline btn-sm" onclick="loadSkuBoard()" style="margin-left:auto;">🔄 刷新数据</button>
+          <button class="btn btn-outline btn-sm" onclick="loadSkuBoard(true)" style="margin-left:auto;">🔄 刷新数据</button>
         </div>
         <div class="skuboard-table-wrap" id="skuboardContent">
           <div class="skuboard-loading">正在加载产品数据...</div>
@@ -8246,11 +8246,11 @@ let skuBoardFilteredData = [];  // 当前筛选排序后的数据
 function fmt(n) { return Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function ageClass(age) { if(age>365)return'skuboard-age-danger';if(age>180)return'skuboard-age-warn';return'skuboard-age-ok'; }
 
-async function loadSkuBoard() {
+async function loadSkuBoard(force = false) {
   const content = document.getElementById('skuboardContent');
   content.innerHTML = '<div class="skuboard-loading">正在加载产品数据...</div>';
   try {
-    const res = await fetch('/api/sku-board/list');
+    const res = await fetch('/api/sku-board/list' + (force ? '?refresh=1' : ''));
     const data = await res.json();
     if (data.error) { content.innerHTML = '<div class="skuboard-loading">错误: '+data.error+'</div>'; return; }
     skuBoardData = data.skus || [];
@@ -8986,7 +8986,7 @@ function loadForecast(force = false) {
 
   document.getElementById(tableId).innerHTML = '<div class="profit-placeholder"><div class="icon">⏳</div>正在计算...</div>';
 
-  forecastLoadingPromise = fetch('/api/forecast/calculate')
+  forecastLoadingPromise = fetch('/api/forecast/calculate' + (force ? '?refresh=1' : ''))
     .then(r => r.json())
     .then(data => {
       if (data.error) { document.getElementById(tableId).innerHTML = '<p style="color:red;">' + data.error + '</p>'; return; }

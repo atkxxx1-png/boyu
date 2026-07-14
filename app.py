@@ -5,6 +5,7 @@
 """
 
 import json
+import gzip
 import os
 import sqlite3
 import sys
@@ -26,6 +27,21 @@ def add_no_cache(response):
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
+    accept_encoding = request.headers.get('Accept-Encoding', '').lower()
+    if (
+        'gzip' in accept_encoding
+        and response.status_code == 200
+        and not response.direct_passthrough
+        and not response.headers.get('Content-Encoding')
+        and response.mimetype in ('application/json', 'text/html', 'text/css', 'application/javascript', 'text/javascript')
+    ):
+        body = response.get_data()
+        if len(body) > 2048:
+            compressed = gzip.compress(body)
+            response.set_data(compressed)
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Content-Length'] = str(len(compressed))
+            response.headers['Vary'] = 'Accept-Encoding'
     return response
 
 # ============================================================
@@ -3657,6 +3673,22 @@ def api_calc_profit_de():
         return jsonify({'error': str(e)}), 500
 
 
+def _warm_heavy_api_cache_async():
+    def _worker():
+        try:
+            time.sleep(2)
+            with app.test_client() as client:
+                client.get('/api/sku-board/list')
+                client.get('/api/forecast/calculate')
+        except Exception as e:
+            try:
+                log.warning(f"heavy api cache warmup failed: {e}")
+            except Exception:
+                pass
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
 # ============================================================
 #  英国尾程测算引擎（易达云 × 5渠道 / 大健云仓 × 3渠道）
 # ============================================================
@@ -6652,6 +6684,50 @@ _default_country_region = 'DE'  # 兜底默认地区
 # SKU映射缓存（5分钟TTL，避免每次请求全量加载SKU映射表）
 _sku_mapping_cache = None    # (sku_mapping, reverse_sku_mapping)
 _sku_mapping_cache_time = 0
+_heavy_api_cache = {}
+_heavy_api_cache_lock = threading.RLock()
+HEAVY_API_CACHE_TTL = int(os.getenv('HEAVY_API_CACHE_TTL', '900'))
+
+
+def _db_cache_token():
+    try:
+        st = os.stat(DB_PATH)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return (0, 0)
+
+
+def _wants_cache_refresh():
+    return str(request.args.get('refresh', '')).lower() in ('1', 'true', 'yes')
+
+
+def _cached_json_response(cache_name):
+    if _wants_cache_refresh():
+        return None
+    key = (cache_name, _db_cache_token())
+    now = time.time()
+    with _heavy_api_cache_lock:
+        cached = _heavy_api_cache.get(key)
+        if not cached:
+            return None
+        expires_at, body = cached
+        if expires_at < now:
+            _heavy_api_cache.pop(key, None)
+            return None
+    return app.response_class(body, mimetype='application/json')
+
+
+def _store_json_response(cache_name, payload, ttl=HEAVY_API_CACHE_TTL):
+    body = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+    key = (cache_name, _db_cache_token())
+    with _heavy_api_cache_lock:
+        _heavy_api_cache[key] = (time.time() + ttl, body)
+    return app.response_class(body, mimetype='application/json')
+
+
+def _clear_heavy_api_cache():
+    with _heavy_api_cache_lock:
+        _heavy_api_cache.clear()
 
 
 def load_country_mapping(conn):
@@ -6729,6 +6805,9 @@ def get_sku_mapping_cached(conn):
 
 @app.route('/api/sku-board/list', methods=['GET'])
 def api_sku_board_list():
+    cached = _cached_json_response('sku_board_list')
+    if cached:
+        return cached
     """获取SKU列表聚合数据"""
     try:
         conn = db_connect()
@@ -7168,7 +7247,7 @@ def api_sku_board_list():
         )]
 
         conn.close()
-        return jsonify({'skus': result_skus, 'all_owners': all_owners, 'date_range': {'from': ninety_ago_slash, 'to': yesterday_end}})
+        return _store_json_response('sku_board_list', {'skus': result_skus, 'all_owners': all_owners, 'date_range': {'from': ninety_ago_slash, 'to': yesterday_end}})
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -8352,6 +8431,9 @@ def _urgency_stars(days_remaining, L_shipping):
 
 @app.route('/api/forecast/calculate', methods=['GET'])
 def forecast_calculate():
+    cached = _cached_json_response('forecast_calculate')
+    if cached:
+        return cached
     """需求预测计算：返回工厂下单建议和海运建议"""
     try:
         conn = db_connect()
@@ -8507,7 +8589,7 @@ def forecast_calculate():
         factory_rows.sort(key=lambda x: (-x['stars'], x['days_left']))
         shipping_rows.sort(key=lambda x: (-x['stars'], x['days_left']))
 
-        return jsonify({
+        return _store_json_response('forecast_calculate', {
             'factory': factory_rows, 'shipping': shipping_rows,
             'factory_count': len(factory_rows), 'shipping_count': len(shipping_rows),
             'params': {'Z': FORECAST_Z, 'alpha': FORECAST_ALPHA, 'window': FORECAST_WINDOW,
@@ -8782,5 +8864,6 @@ if __name__ == '__main__':
 
     # 单次启动（不再自重启，由 daemon.py 统一管理重启逻辑，避免双重守护冲突）
     from waitress import serve
+    _warm_heavy_api_cache_async()
     log.info(f"waitress 启动 (端口 {port}, 线程 16)")
     serve(app, host='0.0.0.0', port=port, threads=16, channel_timeout=120)
