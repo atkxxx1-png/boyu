@@ -1937,7 +1937,7 @@
       <div class="forecast-view" id="forecastFactoryView">
         <div id="forecastFactoryContent" style="max-width:1300px;margin:0 auto;">
           <div class="forecast-toolbar">
-            <button class="btn btn-outline btn-sm" onclick="loadForecast()">🔄 刷新数据</button>
+            <button class="btn btn-outline btn-sm" onclick="loadForecast(true)">🔄 刷新数据</button>
             <span style="margin-left:12px;color:var(--text-secondary);font-size:13px;" id="factoryParams"></span>
           </div>
           <div id="forecastFactoryTable" style="overflow-x:auto;">
@@ -1949,7 +1949,7 @@
       <div class="forecast-view" id="forecastShippingView">
         <div id="forecastShippingContent" style="max-width:1300px;margin:0 auto;">
           <div class="forecast-toolbar">
-            <button class="btn btn-outline btn-sm" onclick="loadForecast()">🔄 刷新数据</button>
+            <button class="btn btn-outline btn-sm" onclick="loadForecast(true)">🔄 刷新数据</button>
             <button class="btn btn-primary btn-sm" onclick="openShippingRecommend()" style="margin-left:8px;">🚢 海运推荐</button>
             <span style="margin-left:12px;color:var(--text-secondary);font-size:13px;" id="shippingParams"></span>
           </div>
@@ -8242,7 +8242,6 @@ let allOwners = [];
 let skuBoardPageSize = 50;       // 每页条数
 let skuBoardCurrentPage = 1;    // 当前页码
 let skuBoardFilteredData = [];  // 当前筛选排序后的数据
-let skuBoardPreloadDone = false; // 后台预渲染是否完成
 
 function fmt(n) { return Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
 function ageClass(age) { if(age>365)return'skuboard-age-danger';if(age>180)return'skuboard-age-warn';return'skuboard-age-ok'; }
@@ -8260,7 +8259,6 @@ async function loadSkuBoard() {
     skuBoardExpanded2.clear();
     skuBoardCurrentPage = 1;   // 重置到第一页
     skuBoardFilteredData = [];
-    skuBoardPreloadDone = false;
     populateSkuBoardFilters();
     renderSkuBoard();
   } catch(e) {
@@ -8655,10 +8653,6 @@ function renderSkuBoard() {
   html += renderSkuPagination();
   document.getElementById('skuboardContent').innerHTML = html;
 
-  // 后台预渲染剩余页面（避免翻页卡顿）
-  if (!skuBoardPreloadDone && skuBoardCurrentPage === 1) {
-    preloadSkuPages();
-  }
 }
 
 // 渲染指定页的SKU行，返回 HTML 字符串
@@ -8807,35 +8801,6 @@ function skuJumpPage() {
   goToSkuPage(page);
 }
 
-// 后台预渲染：分批渲染剩余所有页面（不影响当前页显示）
-let _skuPreloadTimer = null;
-function preloadSkuPages() {
-  if (_skuPreloadTimer) clearTimeout(_skuPreloadTimer);
-
-  const totalPages = Math.ceil(skuBoardFilteredData.length / skuBoardPageSize);
-  let page = 2; // 从第2页开始
-
-  function preloadNext() {
-    if (page > totalPages) {
-      skuBoardPreloadDone = true;
-      return;
-    }
-    // 渲染到隐藏容器中预热DOM
-    const preloadDiv = document.getElementById('skuboardPreload') || (() => {
-      const d = document.createElement('div');
-      d.id = 'skuboardPreload';
-      d.style.cssText = 'display:none;';
-      document.getElementById('skuboardContent').appendChild(d);
-      return d;
-    })();
-    preloadDiv.innerHTML += '<table class="skuboard-table"><tbody>' + renderSkuPageRows(page) + '</tbody></table>';
-    page++;
-    _skuPreloadTimer = setTimeout(preloadNext, 50); // 每50ms渲染一页
-  }
-
-  _skuPreloadTimer = setTimeout(preloadNext, 100); // 延迟100ms开始后台渲染
-}
-
 async function exportSkuBoard() {
   // 复用 renderSkuBoard 中的筛选逻辑，获取当前筛选后的数据
   const q = (document.getElementById('skuboardSearch')?.value||'').trim();
@@ -8969,6 +8934,8 @@ function toggleDrill(rowId, country, type) {
 
 // ========== 需求预测 ==========
 let forecastData = { factory: [], shipping: [] };
+let forecastLoadedAt = 0;
+let forecastLoadingPromise = null;
 
 function starsHTML(n) {
   if (n <= 0) return '';
@@ -8982,7 +8949,21 @@ function urgencyClass(stars) {
   return 'urgency-' + Math.min(stars, 5);
 }
 
-function loadForecast() {
+function renderForecastViews(isFactory, isShipping, data) {
+  const params = data.params || {};
+  const paramText = `Z=${params.Z} alpha=${params.alpha} 窗口=${params.window}天 目标库龄=${params.target_days}天 MOQ=${params.MOQ}`;
+
+  if (isFactory) {
+    document.getElementById('factoryParams').textContent = paramText;
+    renderFactoryTable(data.factory);
+  }
+  if (isShipping) {
+    document.getElementById('shippingParams').textContent = paramText;
+    renderShippingTable(data.shipping);
+  }
+}
+
+function loadForecast(force = false) {
   const fv = document.getElementById('forecastFactoryView');
   const sv = document.getElementById('forecastShippingView');
   const isFactory = fv && fv.classList.contains('active');
@@ -8991,28 +8972,34 @@ function loadForecast() {
   if (!isFactory && !isShipping) return;
 
   const tableId = isFactory ? 'forecastFactoryTable' : 'forecastShippingTable';
+  const hasCache = forecastData && forecastData.params && forecastLoadedAt > 0;
+  if (!force && hasCache) {
+    renderForecastViews(isFactory, isShipping, forecastData);
+    return;
+  }
+
+  if (!force && forecastLoadingPromise) {
+    document.getElementById(tableId).innerHTML = '<div class="profit-placeholder"><div class="icon">⏳</div>正在计算...</div>';
+    forecastLoadingPromise.then(data => renderForecastViews(isFactory, isShipping, data));
+    return;
+  }
+
   document.getElementById(tableId).innerHTML = '<div class="profit-placeholder"><div class="icon">⏳</div>正在计算...</div>';
 
-  fetch('/api/forecast/calculate')
+  forecastLoadingPromise = fetch('/api/forecast/calculate')
     .then(r => r.json())
     .then(data => {
       if (data.error) { document.getElementById(tableId).innerHTML = '<p style="color:red;">' + data.error + '</p>'; return; }
       forecastData = data;
-
-      const params = data.params || {};
-      const paramText = `Z=${params.Z} alpha=${params.alpha} 窗口=${params.window}天 目标库龄=${params.target_days}天 MOQ=${params.MOQ}`;
-
-      if (isFactory) {
-        document.getElementById('factoryParams').textContent = paramText;
-        renderFactoryTable(data.factory);
-      }
-      if (isShipping) {
-        document.getElementById('shippingParams').textContent = paramText;
-        renderShippingTable(data.shipping);
-      }
+      forecastLoadedAt = Date.now();
+      renderForecastViews(isFactory, isShipping, data);
+      return data;
     })
     .catch(e => {
       document.getElementById(tableId).innerHTML = '<p style="color:red;">加载失败: ' + e.message + '</p>';
+    })
+    .finally(() => {
+      forecastLoadingPromise = null;
     });
 }
 

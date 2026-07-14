@@ -7122,14 +7122,18 @@ def api_sku_board_list():
                     acct_country_sales[ac_key]['daily'][d] = acct_country_sales[ac_key]['daily'].get(d, 0) + qty
 
             # 构建 account_sales 输出，每个账号下增加 by_country 子对象
+            cutoff_7 = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+            cutoff_14 = (datetime.now() - timedelta(days=14)).strftime('%Y-%m-%d')
+            cutoff_30 = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+
             def build_as_output(daily_dict):
                 """根据 daily 字典构建 {total_90d, sales_8d, avg_7/14/30d}"""
                 return {
                     'total_90d': round(daily_dict.get('total', 0), 2),
                     'sales_8d': [round(daily_dict.get(d, 0), 2) for d in eight_dates],
-                    'avg_7d': round(sum(daily_dict.get(d, 0) for d in all_dates if d >= (datetime.now()-timedelta(days=7)).strftime('%Y-%m-%d')) / 7, 2),
-                    'avg_14d': round(sum(daily_dict.get(d, 0) for d in all_dates if d >= (datetime.now()-timedelta(days=14)).strftime('%Y-%m-%d')) / 14, 2),
-                    'avg_30d': round(sum(daily_dict.get(d, 0) for d in all_dates if d >= (datetime.now()-timedelta(days=30)).strftime('%Y-%m-%d')) / 30, 2),
+                    'avg_7d': round(sum(daily_dict.get(d, 0) for d in all_dates if d >= cutoff_7) / 7, 2),
+                    'avg_14d': round(sum(daily_dict.get(d, 0) for d in all_dates if d >= cutoff_14) / 14, 2),
+                    'avg_30d': round(sum(daily_dict.get(d, 0) for d in all_dates if d >= cutoff_30) / 30, 2),
                 }
 
             item['account_sales'] = {}
@@ -8207,6 +8211,54 @@ def _calc_daily_stats(sales_list):
     """从今日往前推90天分三段加权(0.5/0.3/0.2)，每段总数除以该段日历天数"""
     if not sales_list:
         return 0, 0
+
+    today = datetime.now().date()
+    today_ord = today.toordinal()
+    records = []
+    min_ord = None
+    for d in sales_list:
+        try:
+            parts = (d.get('date') or '')[:10].replace('/', '-').strip().split('-')
+            day = datetime(int(parts[0]), int(parts[1]), int(parts[2])).date()
+        except Exception:
+            continue
+        day_ord = day.toordinal()
+        qty = d.get('qty', 0) or 0
+        records.append((day_ord, qty))
+        if min_ord is None or day_ord < min_ord:
+            min_ord = day_ord
+
+    if not records or min_ord is None:
+        return 0, 0
+
+    total_span = today_ord - min_ord
+    window_days = min(90, max(total_span, 30))
+    start_ord = today_ord - window_days
+    seg_days = window_days // 3
+    seg3_end = today_ord
+    seg3_start = today_ord - seg_days
+    seg2_end = seg3_start
+    seg2_start = today_ord - seg_days * 2
+    seg1_end = seg2_start
+
+    s1 = s2 = s3 = 0
+    window_qty = []
+    for day_ord, qty in records:
+        if seg3_start < day_ord <= seg3_end:
+            s3 += qty
+        elif seg2_start < day_ord <= seg2_end:
+            s2 += qty
+        elif start_ord < day_ord <= seg1_end:
+            s1 += qty
+        if start_ord < day_ord <= today_ord:
+            window_qty.append(qty)
+
+    d3 = max(1, min(seg3_end - seg3_start, 30))
+    d2 = max(1, min(seg2_end - seg2_start, 30))
+    d1 = max(1, min(seg1_end - start_ord, 30))
+    daily_avg = round((s3 / d3) * 0.5 + (s2 / d2) * 0.3 + (s1 / d1) * 0.2, 2)
+    sigma = round(statistics.stdev(window_qty), 2) if len(window_qty) >= 2 else round(max(daily_avg * 0.3, 0.5), 2)
+    return daily_avg, sigma
 
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
