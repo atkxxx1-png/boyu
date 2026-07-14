@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "dingtalk-ai-table": {
+      "baseUrl": "https://mcp-gw.dingtalk.com/server/example?key=your_key"
+    }
+  }
+}

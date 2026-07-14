@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Runtime state
+*.log
+*.lock
+*.pid
+
+# Local secrets and machine-specific config
+.env
+.env.*
+!.env.example
+config/*.json
+!config/*.example.json
+
+# Local databases and backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.backup*
+data/*.db*
+data/*backup*

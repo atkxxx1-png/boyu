@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BI 看板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: #f0f2f5; color: #333; min-height: 100vh;
+}
+.header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  color: #fff; padding: 18px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15); position: sticky; top: 0; z-index: 100;
+}
+.header h1 { font-size: 20px; font-weight: 600; }
+.header .sku-tag { background: rgba(255,255,255,0.15); padding: 6px 16px; border-radius: 20px; font-size: 14px; font-family: 'Consolas', monospace; }
+.header .date { font-size: 13px; opacity: 0.8; }
+.header a { color: #91d5ff; text-decoration: none; font-size: 13px; }
+.header a:hover { text-decoration: underline; }
+.container { max-width: 1400px; margin: 0 auto; padding: 24px 20px; }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.kpi-card { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); transition: transform 0.15s; }
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.kpi-label { font-size: 12px; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.kpi-value { font-size: 28px; font-weight: 700; }
+.kpi-sub { font-size: 12px; color: #999; margin-top: 4px; }
+.section { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 20px; }
+.section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #f0f0f0; display: flex; align-items: center; gap: 8px; }
+.section-title::before { content: ''; display: inline-block; width: 4px; height: 18px; background: #1890ff; border-radius: 2px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-2-1 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { background: #fafafa; padding: 10px 12px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e8e8e8; white-space: nowrap; }
+td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
+tr:hover td { background: #fafcff; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+.age-tag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 500; }
+.age-fresh { background: #f6ffed; color: #52c41a; border: 1px solid #b7eb8f; }
+.age-warn { background: #fff2e8; color: #fa8c16; border: 1px solid #ffd591; }
+.age-danger { background: #fff1f0; color: #f5222d; border: 1px solid #ffa39e; }
+.warehouse-card { border: 1px solid #e8e8e8; border-radius: 10px; overflow: hidden; }
+.warehouse-header { padding: 12px 16px; font-weight: 600; font-size: 14px; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+.warehouse-header.overseas { background: linear-gradient(135deg, #1890ff, #096dd9); }
+.warehouse-header.domestic { background: linear-gradient(135deg, #52c41a, #389e0d); }
+.warehouse-body { padding: 12px 16px; }
+.fee-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.fee-card { flex: 1; min-width: 200px; padding: 16px; border-radius: 10px; border: 1px solid #e8e8e8; }
+.fee-card.danger { border-color: #ffa39e; background: #fff1f0; }
+.fee-card.warn { border-color: #ffd591; background: #fffbe6; }
+.fee-card .fee-amount { font-size: 24px; font-weight: 700; }
+.fee-card .fee-label { font-size: 12px; color: #888; margin-top: 4px; }
+.forecast-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.forecast-item { text-align: center; padding: 16px; border-radius: 10px; border: 1px solid #e8e8e8; }
+.forecast-month { font-size: 13px; color: #888; margin-bottom: 4px; }
+.forecast-value { font-size: 32px; font-weight: 700; }
+.forecast-sub { font-size: 12px; color: #999; margin-top: 4px; }
+.forecast-change { font-size: 13px; margin-top: 4px; }
+.forecast-change.up { color: #f5222d; }
+.forecast-change.down { color: #52c41a; }
+.stockout-card { background: linear-gradient(135deg, #fff2e8, #fff7e6); border: 2px solid #fa8c16; border-radius: 12px; padding: 24px; text-align: center; }
+.stockout-days { font-size: 48px; font-weight: 800; color: #fa8c16; }
+.stockout-date { font-size: 14px; color: #666; margin-top: 8px; }
+.chart-wrap { position: relative; height: 300px; }
+.chart-wrap.tall { height: 360px; }
+.sale-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+.sale-cell { text-align: center; padding: 12px; border-radius: 8px; background: #fafafa; }
+.sale-cell .period { font-size: 12px; color: #888; }
+.sale-cell .total { font-size: 22px; font-weight: 700; margin: 4px 0; }
+.sale-cell .avg { font-size: 12px; color: #999; }
+.store-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+.store-cell { text-align: center; padding: 14px; border-radius: 10px; border: 1px solid #e8e8e8; transition: all 0.2s; }
+.store-cell:hover { border-color: #1890ff; box-shadow: 0 2px 8px rgba(24,144,255,0.1); }
+.store-cell .store-name { font-size: 13px; color: #555; margin-bottom: 4px; font-weight: 600; }
+.store-cell .store-sales { font-size: 18px; font-weight: 700; color: #1890ff; }
+.warning-banner { background: #fff2e8; border: 1px solid #ffd591; border-radius: 8px; padding: 12px 16px; margin-top: 16px; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.warning-icon { font-size: 18px; }
+@media (max-width: 768px) {
+  .grid-2, .grid-2-1 { grid-template-columns: 1fr; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .forecast-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1 id="headerTitle">BI 看板</h1>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <a href="sku_list.html">&larr; 返回SKU列表</a>
+    <span class="sku-tag" id="skuTag">SKU: --</span>
+    <span class="date" id="dateInfo">数据截止: 2026-05-22</span>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- KPI 卡片 -->
+<div class="kpi-row" id="kpiRow"></div>
+
+<!-- 库存分布 -->
+<div class="section">
+  <div class="section-title">库存分布与金额</div>
+  <div class="grid-2">
+    <div class="warehouse-card" id="overseasCard"></div>
+    <div class="warehouse-card" id="domesticCard"></div>
+  </div>
+  <div class="grid-2" style="margin-top:20px;">
+    <div><div style="font-size:14px;font-weight:600;margin-bottom:8px;">库存数量分布</div><div class="chart-wrap"><canvas id="invQtyChart"></canvas></div></div>
+    <div><div style="font-size:14px;font-weight:600;margin-bottom:8px;">库存金额分布</div><div class="chart-wrap"><canvas id="invValueChart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- 库龄状态 -->
+<div class="section">
+  <div class="section-title">批次库龄状态</div>
+  <div class="grid-2">
+    <div id="ageTableWrap"></div>
+    <div><div style="font-size:14px;font-weight:600;margin-bottom:8px;">库龄分布图</div><div class="chart-wrap"><canvas id="ageChart"></canvas></div></div>
+  </div>
+  <div id="warningBanner"></div>
+</div>
+
+<!-- 销量分析 -->
+<div class="section">
+  <div class="section-title">销量分析</div>
+  <div class="grid-2-1">
+    <div><div style="font-size:14px;font-weight:600;margin-bottom:8px;">近90天每日销量趋势</div><div class="chart-wrap tall"><canvas id="salesTrendChart"></canvas></div></div>
+    <div id="salesSummary"></div>
+  </div>
+  <div style="font-size:14px;font-weight:600;margin:20px 0 8px;">各时段销量对比</div>
+  <div class="chart-wrap"><canvas id="periodChart"></canvas></div>
+</div>
+
+<!-- 仓储费 -->
+<div class="section">
+  <div class="section-title">仓储费明细</div>
+  <div class="fee-row" id="feeRow"></div>
+  <div style="margin-top:20px;"><div style="font-size:14px;font-weight:600;margin-bottom:8px;">仓储费构成</div><div class="chart-wrap"><canvas id="storageChart"></canvas></div></div>
+</div>
+
+<!-- 销售预测 -->
+<div class="section">
+  <div class="section-title">销售预测 (月度对比)</div>
+  <div class="forecast-grid" id="forecastGrid"></div>
+  <div style="margin-top:20px;"><div style="font-size:14px;font-weight:600;margin-bottom:8px;">月度销量 & 日均对比</div><div class="chart-wrap"><canvas id="forecastChart"></canvas></div></div>
+</div>
+
+<!-- 售罄预测 -->
+<div class="section">
+  <div class="section-title">售罄预测与断货预警</div>
+  <div class="grid-2">
+    <div id="stockoutCard"></div>
+    <div id="weightedTable"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+// ============ 获取URL参数并加载数据 ============
+const params = new URLSearchParams(window.location.search);
+const currentSku = params.get('sku') || 'BC04801901WH';
+const currentOwner = params.get('owner') || '';
+let data = null;
+
+function fmt(n) { return Number(n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2}); }
+function fmtRMB(n) { return '¥'+fmt(n); }
+function fmtUSD(n) { return '$'+fmt(n); }
+function ageTag(age) {
+  if(age>=365) return '<span class="age-tag age-danger">严重超龄</span>';
+  if(age>=180) return '<span class="age-tag age-warn">超龄预警</span>';
+  if(age>=90) return '<span class="age-tag age-warn">正常</span>';
+  return '<span class="age-tag age-fresh">新品入库</span>';
+}
+function ageDisp(age) {
+  return age>=180?'<span class="age-tag age-danger">'+age+'天</span>':
+         age>=90?'<span class="age-tag age-warn">'+age+'天</span>':
+         '<span class="age-tag age-fresh">'+age+'天</span>';
+}
+function salesColor(v) { return v===0?'#d9d9d9':v>=3?'#722ed1':v>=2?'#1890ff':'#52c41a'; }
+
+async function loadDashboard() {
+  document.getElementById('skuTag').textContent = 'SKU: '+currentSku + (currentOwner ? ' | 负责人: '+currentOwner : '') + ' | 加载中...';
+  // 页面标题和头部预显示 SKU
+  document.title = currentSku + (currentOwner ? ' [' + currentOwner + ']' : '') + ' - BI 看板';
+  document.getElementById('headerTitle').textContent = currentSku + (currentOwner ? ' [' + currentOwner + ']' : '') + ' BI 看板';
+  try {
+    let apiUrl = '/api/sku-board/detail/' + currentSku;
+    if (currentOwner) apiUrl += '?owner=' + encodeURIComponent(currentOwner);
+    const res = await fetch(apiUrl);
+    data = await res.json();
+    if (data.error) { alert(data.error); return; }
+    renderAll();
+  } catch(e) {
+    alert('加载失败: '+e.message);
+  }
+}
+
+function renderAll() {
+  const d = data;
+  const pp = d.purchase_price;
+  const overseas = d.overseas_batches || [];
+  const domestic = d.domestic_batches || [];
+  const allBatches = [...overseas, ...domestic];
+  const totalOverseas = d.total_overseas;
+  const totalDomestic = d.total_domestic;
+  const totalInv = d.total_inv;
+  const inTransit = d.in_transit || 0;
+
+  // 入库日期计算
+  function inboundDate(age) {
+    const dt = new Date(); dt.setDate(dt.getDate()-age);
+    return dt.toISOString().slice(0,10);
+  }
+
+  // 销量
+  const ds = d.daily_sales || [];
+  const dl = d.date_labels || [];
+  const s7=d.s7,s14=d.s14,s30=d.s30,s90=d.s90;
+  const weightedDaily = d.weighted_daily;
+  const avgDaily3 = d.avg_daily_3period; // 用户要求：7/14/30天平均值
+
+  // 仓储费
+  let feeGt180=d.storage_gt180, feeLt180=d.storage_lt180, feeTotal=d.storage_total;
+  let gt180Qty=d.gt180_qty, lt180Qty=d.lt180_qty;
+
+  // 售罄
+  const selloutDays = d.sellout_days;
+  const stockoutDate = d.stockout_date;
+  const selloutBase = totalOverseas;
+  const selloutDiv = avgDaily3;
+
+  // 月对比
+  const mayProjected=d.may_projected, aprTotal=d.apr_total;
+  const mayDaily=d.may_daily, aprDaily=d.apr_daily;
+  const momChange=d.mom_change;
+
+  // 预警
+  const dangerBatches = allBatches.filter(b => b.age>=180);
+  let warningHtml = '';
+  if (dangerBatches.length>0) {
+    const names = dangerBatches.map((b,i) => {
+      const isO=overseas.some(o=>o.warehouse===b.warehouse&&o.qty===b.qty&&o.age===b.age);
+      return (isO?'海外':'工厂')+'#'+(i+1)+' ('+b.warehouse+')';
+    }).join('、');
+    warningHtml = '<div class="warning-banner"><span class="warning-icon">&#9888;</span><span><strong>预警:</strong> '+names+' 库龄超过180天警戒线，仓储费率$0.50/件/天，建议优先处理。</span></div>';
+  }
+
+  // ====== 渲染 ======
+  document.getElementById('skuTag').textContent = 'SKU: '+currentSku;
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate()-1);
+  document.getElementById('dateInfo').textContent = '数据截止: ' + yesterday.toISOString().slice(0,10);
+
+  // KPI
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">工厂库存</div><div class="kpi-value" style="color:#52c41a;">${fmt(totalDomestic)}<span style="font-size:14px;font-weight:400;">件</span></div><div class="kpi-sub">金额 ${fmtRMB(d.domestic_value)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">海外仓库存</div><div class="kpi-value" style="color:#1890ff;">${fmt(totalOverseas)}<span style="font-size:14px;font-weight:400;">件</span></div><div class="kpi-sub">金额 ${fmtRMB(d.overseas_value)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">在途货物</div><div class="kpi-value" style="color:#722ed1;">${fmt(inTransit)}<span style="font-size:14px;font-weight:400;">件</span></div><div class="kpi-sub">即将到港</div></div>
+    <div class="kpi-card"><div class="kpi-label">加权日均销量</div><div class="kpi-value" style="color:#fa8c16;">${fmt(avgDaily3)}<span style="font-size:14px;font-weight:400;">件/天</span></div><div class="kpi-sub">(7天${fmt(s7.avg)} + 14天${fmt(s14.avg)} + 30天${fmt(s30.avg)})/3</div></div>
+    <div class="kpi-card"><div class="kpi-label">日仓储费</div><div class="kpi-value" style="color:#f5222d;">${fmtUSD(feeTotal)}</div><div class="kpi-sub">其中>180天: ${fmtUSD(feeGt180)}/天</div></div>
+    <div class="kpi-card"><div class="kpi-label">预计售罄</div><div class="kpi-value" style="color:#13c2c2;">${fmt(selloutDays)}<span style="font-size:14px;font-weight:400;">天</span></div><div class="kpi-sub">海外仓${fmt(selloutBase)}件 / 日均${fmt(selloutDiv)}件</div></div>
+  `;
+
+  // 海外仓表
+  let oRows='';
+  overseas.forEach((b,i) => {
+    oRows += `<tr><td>#${i+1}</td><td>${b.warehouse}</td><td class="text-right">${b.qty}</td><td class="text-right">${b.original}</td><td>${ageDisp(b.age)}</td><td>${inboundDate(b.age)}</td><td class="text-right">${fmtRMB(b.qty*pp)}</td></tr>`;
+  });
+  document.getElementById('overseasCard').innerHTML = `
+    <div class="warehouse-header overseas"><span>海外仓库存</span><span>${totalOverseas}件 | ${fmtRMB(d.overseas_value)}</span></div>
+    <div class="warehouse-body"><table><thead><tr><th>批次</th><th>仓库</th><th>库存</th><th>上架</th><th>库龄</th><th>入库日期</th><th>金额</th></tr></thead><tbody>${oRows}<tr style="font-weight:700;background:#fafafa;"><td colspan="3">合计</td><td class="text-right">${overseas.reduce((s,b)=>s+(b.original||0),0)}</td><td></td><td></td><td class="text-right">${fmtRMB(d.overseas_value)}</td></tr></tbody></table></div>`;
+
+  // 国内仓表（工厂库存）
+  let dRows='';
+  domestic.forEach((b,i) => {
+    dRows += `<tr><td>#${i+1}</td><td>${b.warehouse||'工厂'}</td><td class="text-right">${b.qty}</td><td class="text-right">${b.original}</td><td>${ageDisp(b.age)}</td><td>${b.delivery_date||'-'}</td><td class="text-right">${fmtRMB(b.qty*pp)}</td></tr>`;
+  });
+  document.getElementById('domesticCard').innerHTML = `
+    <div class="warehouse-header domestic"><span>工厂库存</span><span>${totalDomestic}件 | ${fmtRMB(d.domestic_value)}</span></div>
+    <div class="warehouse-body"><table><thead><tr><th>批次</th><th>工厂</th><th>库存</th><th>上架</th><th>库龄</th><th>交货日期</th><th>金额</th></tr></thead><tbody>${dRows}<tr style="font-weight:700;background:#fafafa;"><td colspan="3">合计</td><td class="text-right">${domestic.reduce((s,b)=>s+(b.original||0),0)}</td><td></td><td></td><td class="text-right">${fmtRMB(d.domestic_value)}</td></tr></tbody></table></div>`;
+
+  // 库龄状态表
+  let ageRows='';
+  allBatches.forEach((b,i) => {
+    const prefix = overseas.includes(b)?'海外#'+(overseas.indexOf(b)+1):'工厂#'+(domestic.indexOf(b)+1);
+    ageRows += `<tr><td>${prefix}</td><td>${b.warehouse||''}</td><td class="text-right">${b.qty}</td><td class="text-right">${b.age}</td><td>${ageTag(b.age)}</td><td class="text-right">$${b.age>=180?'0.50':'0.20'}</td><td class="text-right" style="color:${b.age>=180?'#f5222d':'#333'};font-weight:600;">$${fmt(b.qty*(b.age>=180?0.5:0.2))}</td></tr>`;
+  });
+  document.getElementById('ageTableWrap').innerHTML = `<table><thead><tr><th>批次</th><th>仓库</th><th>库存</th><th>库龄(天)</th><th>状态</th><th>仓储费率</th><th>日仓储费</th></tr></thead><tbody>${ageRows}</tbody></table>`;
+  document.getElementById('warningBanner').innerHTML = warningHtml;
+
+  // 销量汇总
+  document.getElementById('salesSummary').innerHTML = `
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;">各时段汇总</div>
+    <div class="sale-summary">
+      <div class="sale-cell"><div class="period">近7天</div><div class="total" style="color:#722ed1;">${fmt(s7.total)}</div><div class="avg">日均 ${fmt(s7.avg)}</div></div>
+      <div class="sale-cell"><div class="period">近14天</div><div class="total" style="color:#1890ff;">${fmt(s14.total)}</div><div class="avg">日均 ${fmt(s14.avg)}</div></div>
+      <div class="sale-cell"><div class="period">近30天</div><div class="total" style="color:#52c41a;">${fmt(s30.total)}</div><div class="avg">日均 ${fmt(s30.avg)}</div></div>
+      <div class="sale-cell"><div class="period">近90天</div><div class="total" style="color:#fa8c16;">${fmt(s90.total)}</div><div class="avg">日均 ${fmt(s90.avg)}</div></div>
+    </div>
+    <div style="font-size:14px;font-weight:600;margin:20px 0 8px;">各店铺近30天销量</div>
+    <div class="store-grid" id="storeSalesGrid"></div>`;
+  // 各店铺30天真实销量（平台名映射）
+  const platformSales = d.account_sales_30d || {};
+  // 按实际有销量的店铺动态显示（与产品详情看板展开一致）
+  const storeEntries = Object.entries(platformSales).sort((a,b)=>b[1]-a[1]);
+  const storeHtml = storeEntries.map(([k,v]) => {
+    return '<div class="store-cell"><div class="store-name">'+k+'</div><div class="store-sales">'+fmt(v)+'</div><div style="font-size:11px;color:#999;">件</div></div>';
+  }).join('');
+  document.getElementById('storeSalesGrid').innerHTML = storeHtml;
+
+  // 仓储费
+  document.getElementById('feeRow').innerHTML = `
+    <div class="fee-card danger"><div class="fee-amount" style="color:#f5222d;">${fmtUSD(feeGt180)}<span style="font-size:14px;font-weight:400;">/天</span></div><div class="fee-label">>180天仓储费</div><div style="font-size:11px;color:#999;margin-top:4px;">${gt180Qty}件超龄库存</div></div>
+    <div class="fee-card warn"><div class="fee-amount" style="color:#fa8c16;">${fmtUSD(feeLt180)}<span style="font-size:14px;font-weight:400;">/天</span></div><div class="fee-label"><180天仓储费</div><div style="font-size:11px;color:#999;margin-top:4px;">${lt180Qty}件正常库存</div></div>
+    <div class="fee-card" style="border-color:#1890ff;background:#f0f5ff;"><div class="fee-amount" style="color:#1890ff;">${fmtUSD(feeTotal)}<span style="font-size:14px;font-weight:400;">/天</span></div><div class="fee-label">总仓储费</div><div style="font-size:11px;color:#999;margin-top:4px;">月≈${fmtUSD(Math.round(feeTotal*30))} | 年≈${fmtUSD(Math.round(feeTotal*365))}</div></div>`;
+
+  // 月度预测
+  document.getElementById('forecastGrid').innerHTML = `
+    <div class="forecast-item" style="background:#fafafa;"><div class="forecast-month">4月(实际)</div><div class="forecast-value" style="color:#595959;">${fmt(aprTotal)}</div><div class="forecast-sub">件 | 日均${fmt(aprDaily)}</div></div>
+    <div class="forecast-item" style="background:${momChange>=0?'#f6ffed':'#fff1f0'};border-color:${momChange>=0?'#b7eb8f':'#ffa39e'};"><div class="forecast-month">5月(预估)</div><div class="forecast-value" style="color:${momChange>=0?'#52c41a':'#f5222d'};">${fmt(mayProjected)}</div><div class="forecast-sub">件 | 日均${fmt(mayDaily)}</div><div class="forecast-change ${momChange>=0?'up':'down'}">${momChange>=0?'&#9650;':'&#9660;'}环比${momChange>=0?'+':''}${momChange}%</div></div>`;
+
+  // 售罄
+  document.getElementById('stockoutCard').innerHTML = `
+    <div class="stockout-card"><div style="font-size:14px;color:#888;margin-bottom:8px;">预计售罄天数</div><div class="stockout-days">${selloutDays>999?'>999':fmt(selloutDays)}<span style="font-size:20px;">天</span></div><div class="stockout-date">预计断货: <strong>${selloutDays>999?'--':stockoutDate}</strong></div><div style="font-size:12px;color:#999;margin-top:8px;">海外仓${fmt(selloutBase)}件 / 日均${fmt(selloutDiv)}件</div></div>`;
+
+  document.getElementById('weightedTable').innerHTML = `
+    <div style="font-size:14px;font-weight:600;margin-bottom:8px;">日均销量计算</div>
+    <table><thead><tr><th>时段</th><th>天数</th><th>总销量</th><th>日均</th><th>权重</th><th>贡献</th></tr></thead><tbody>
+      <tr><td>近7天</td><td class="text-center">7</td><td class="text-right">${fmt(s7.total)}</td><td class="text-right">${fmt(s7.avg)}</td><td class="text-center">1/3</td><td class="text-right">${fmt(s7.avg/3)}</td></tr>
+      <tr><td>近14天</td><td class="text-center">14</td><td class="text-right">${fmt(s14.total)}</td><td class="text-right">${fmt(s14.avg)}</td><td class="text-center">1/3</td><td class="text-right">${fmt(s14.avg/3)}</td></tr>
+      <tr><td>近30天</td><td class="text-center">30</td><td class="text-right">${fmt(s30.total)}</td><td class="text-right">${fmt(s30.avg)}</td><td class="text-center">1/3</td><td class="text-right">${fmt(s30.avg/3)}</td></tr>
+      <tr style="font-weight:700;background:#fafafa;"><td colspan="5">日均销量</td><td class="text-right" style="color:#fa8c16;">${fmt(avgDaily3)}件/天</td></tr>
+    </tbody></table>
+    <div style="margin-top:16px;font-size:13px;color:#666;"><strong>计算:</strong> 售罄天数 = ${fmt(selloutBase)} / ${fmt(selloutDiv)} = ${selloutDays>999?'>999':fmt(selloutDays)}天</div>`;
+
+  renderCharts();
+}
+
+// ============ Charts ============
+Chart.defaults.color='#666';
+Chart.defaults.font.family="-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif";
+
+function destroyCharts() {
+  ['invQtyChart','invValueChart','ageChart','salesTrendChart','periodChart','storageChart','forecastChart'].forEach(id=>{
+    const inst=Chart.getChart(id); if(inst) inst.destroy();
+  });
+}
+
+function renderCharts() {
+  destroyCharts();
+  const d=data;
+  const overseas=d.overseas_batches||[], domestic=d.domestic_batches||[];
+  const allBatches=[...overseas,...domestic];
+  const pp=d.purchase_price;
+  const ds=d.daily_sales||[], dl=d.date_labels||[];
+
+  // 库存数量饼图
+  const qtyLabels=[], qtyData=[], qtyColors=[];
+  allBatches.forEach(b=>{
+    qtyLabels.push(b.warehouse+'('+b.qty+')');
+    qtyData.push(b.qty);
+    qtyColors.push(overseas.includes(b)?(b.age>=180?'#f5222d':'#1890ff'):'#52c41a');
+  });
+  new Chart(document.getElementById('invQtyChart'),{
+    type:'doughnut',data:{labels:qtyLabels,datasets:[{data:qtyData,backgroundColor:qtyColors,borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{padding:12,usePointStyle:true}}}}
+  });
+
+  // 库存金额饼图
+  new Chart(document.getElementById('invValueChart'),{
+    type:'doughnut',data:{labels:['海外仓 '+fmtRMB(d.overseas_value),'国内仓 '+fmtRMB(d.domestic_value)],datasets:[{data:[d.overseas_value,d.domestic_value],backgroundColor:['#1890ff','#52c41a'],borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{padding:12,usePointStyle:true}}}}
+  });
+
+  // 库龄图
+  const ageLabels=allBatches.map((b,i)=>(overseas.includes(b)?'海外#'+(overseas.indexOf(b)+1):'工厂#'+(domestic.indexOf(b)+1))+'\n'+b.warehouse);
+  const ageColors=allBatches.map(b=>b.age>=365?'#f5222d':b.age>=180?'#fa8c16':b.age>=90?'#faad14':'#52c41a');
+  new Chart(document.getElementById('ageChart'),{
+    type:'bar',data:{labels:ageLabels,datasets:[{label:'库龄(天)',data:allBatches.map(b=>b.age),backgroundColor:ageColors,borderRadius:6,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'天数'}}}}
+  });
+
+  // 销量趋势
+  const pointColors=ds.map(salesColor);
+  const maxSales=Math.max(...ds,3);
+  new Chart(document.getElementById('salesTrendChart'),{
+    type:'bar',data:{labels:dl,datasets:[{label:'日销量',data:ds,backgroundColor:pointColors,borderRadius:2,borderSkipped:false,barPercentage:0.9}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.raw+'件'}}},
+      scales:{x:{ticks:{callback:(v,i)=>dl[i]?dl[i].slice(5):'',maxTicksLimit:15,autoSkip:true}},y:{beginAtZero:true,max:Math.ceil(maxSales)+1}}}
+  });
+
+  // 各时段对比
+  new Chart(document.getElementById('periodChart'),{
+    type:'bar',data:{labels:['近7天','近14天','近30天','近90天'],datasets:[
+      {label:'总销量(件)',data:[d.s7.total,d.s14.total,d.s30.total,d.s90.total],backgroundColor:'#1890ff',borderRadius:6,yAxisID:'y'},
+      {label:'日均销量(件)',data:[d.s7.avg,d.s14.avg,d.s30.avg,d.s90.avg],backgroundColor:'#fa8c16',borderRadius:6,yAxisID:'y1'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},
+      scales:{y:{type:'linear',position:'left',title:{display:true,text:'总销量(件)'},beginAtZero:true},
+              y1:{type:'linear',position:'right',title:{display:true,text:'日均(件)'},beginAtZero:true,grid:{drawOnChartArea:false}}}}
+  });
+
+  // 仓储费构成
+  const sLabels=[], sData=[], sColors=[];
+  if(d.storage_gt180>0){sLabels.push('>180天('+fmtUSD(d.storage_gt180)+')');sData.push(d.storage_gt180);sColors.push('#f5222d');}
+  if(d.storage_lt180>0){sLabels.push('<180天('+fmtUSD(d.storage_lt180)+')');sData.push(d.storage_lt180);sColors.push('#fa8c16');}
+  new Chart(document.getElementById('storageChart'),{
+    type:'doughnut',data:{labels:sLabels,datasets:[{data:sData,backgroundColor:sColors,borderWidth:2,borderColor:'#fff'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{padding:12,usePointStyle:true}}}}
+  });
+
+  // 月度对比
+  new Chart(document.getElementById('forecastChart'),{
+    type:'bar',data:{labels:['4月实际','5月预估'],datasets:[
+      {label:'月度总销量(件)',data:[d.apr_total,d.may_projected],backgroundColor:['#91d5ff','#52c41a'],borderRadius:8,yAxisID:'y'},
+      {label:'日均销量(件)',data:[d.apr_daily,d.may_daily],backgroundColor:['#ffd591','#95de64'],borderRadius:8,yAxisID:'y1'}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top'}},
+      scales:{y:{type:'linear',position:'left',title:{display:true,text:'总销量(件)'},beginAtZero:true},
+              y1:{type:'linear',position:'right',title:{display:true,text:'日均(件)'},beginAtZero:true,grid:{drawOnChartArea:false}}}}
+  });
+}
+
+// 启动
+loadDashboard();
+</script>
+
+</body>
+</html>
