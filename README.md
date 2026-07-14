@@ -20,6 +20,8 @@ Runtime databases, logs, locks, and local credentials are intentionally ignored 
 
 This repository includes `render.yaml` for a free Render Web Service.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/atkxxx1-png/boyu)
+
 - Build command: `pip install -r requirements.txt`
 - Start command: `python app.py $PORT`
 - Health check: `/api/health`
